@@ -3,6 +3,9 @@
 .swiftpm/
 Package.resolved
 
+# Allow prebuilt CLI binary
+!macOS/HealthSyncCLI/bin/
+
 # Xcode
 xcuserdata/
 *.xcscmblueprint
