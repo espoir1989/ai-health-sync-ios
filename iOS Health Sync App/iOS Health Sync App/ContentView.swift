@@ -128,79 +128,55 @@ struct ContentView: View {
     @State private var showCopiedFeedback = false
 
     private var pairingSection: some View {
-        Section("配对") {
-            if let qr = appState.pairingQRCode {
-                // 计算 QR 码显示的载荷
-                let payload = qrPayloadString(for: qr)
-
-                // QR 码显示
-                QRCodeView(text: payload)
-                    .padding(.vertical, 8)
-
-                // 配对详情
-                LabeledContent("配对码", value: qr.code)
+        Section("连接信息") {
+            if let serverInfo = appState.serverInfo {
+                // 服务器信息显示
+                LabeledContent("主机", value: serverInfo.host)
                     .font(.system(.body, design: .monospaced))
+                LabeledContent("端口", value: String(serverInfo.port))
                 LabeledContent("指纹") {
-                    Text(qr.certificateFingerprint)
+                    Text(serverInfo.fingerprint)
                         .font(.system(.caption, design: .monospaced))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                         .truncationMode(.middle)
                 }
 
-                // 操作按钮
-                Button {
-                    HapticFeedback.impact(.light)
-                    Task { await appState.refreshPairingCode() }
-                } label: {
-                    if appState.isRefreshing {
-                        HStack(spacing: 6) {
-                            ProgressView()
-                                .controlSize(.small)
-                            Text("刷新中...")
-                        }
-                    } else {
-                        HStack(spacing: 8) {
-                            Image(systemName: "arrow.clockwise")
-                            Text("刷新配对码")
-                        }
-                    }
+                // 生成服务器信息 JSON 用于分享
+                let serverInfoPayload = serverInfoPayloadString(for: serverInfo)
+
+                // QR 码显示
+                if !serverInfoPayload.isEmpty {
+                    QRCodeView(text: serverInfoPayload)
+                        .padding(.vertical, 8)
                 }
-                .liquidGlassButtonStyle(.standard)
-                .disabled(appState.isRefreshing)
 
                 // 复制按钮
                 Button {
-                    guard let currentQR = appState.pairingQRCode else { return }
-                    let currentPayload = qrPayloadString(for: currentQR)
-                    copyPayloadToClipboard(currentPayload)
+                    copyPayloadToClipboard(serverInfoPayload)
                 } label: {
                     HStack(spacing: 8) {
                         Image(systemName: showCopiedFeedback ? "checkmark" : "doc.on.doc")
-                        Text(showCopiedFeedback ? "已复制!" : "复制到剪贴板")
+                        Text(showCopiedFeedback ? "已复制!" : "复制连接信息")
                     }
                 }
                 .liquidGlassButtonStyle(showCopiedFeedback ? .prominent : .standard)
-                .disabled(appState.isRefreshing)
 
                 // 分享按钮
                 Button {
                     HapticFeedback.impact(.light)
-                    guard let currentQR = appState.pairingQRCode else { return }
-                    let currentPayload = qrPayloadString(for: currentQR)
-                    if let image = QRCodeRenderer.render(payload: currentPayload) {
+                    if let image = QRCodeRenderer.render(payload: serverInfoPayload) {
                         qrImageToShare = image
-                        qrPayloadToShare = currentPayload
+                        qrPayloadToShare = serverInfoPayload
                         showingShareSheet = true
                     }
                 } label: {
                     HStack(spacing: 8) {
                         Image(systemName: "square.and.arrow.up")
-                        Text("分享二维码")
+                        Text("分享连接信息")
                     }
                 }
                 .liquidGlassButtonStyle(.standard)
-                .disabled(appState.isRefreshing)
                 .sheet(isPresented: $showingShareSheet) {
                     if let image = qrImageToShare,
                        let payload = qrPayloadToShare {
@@ -215,21 +191,20 @@ struct ContentView: View {
                 }
 
                 // 提示信息
-                Label("保持应用开启以获得最佳可靠性", systemImage: "info.circle")
+                Label("公开访问模式 - 无需配对", systemImage: "lock.open")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } else {
                 // 空状态
                 ContentUnavailableView {
-                    Label("无二维码", systemImage: "qrcode")
+                    Label("无连接信息", systemImage: "qrcode")
                 } description: {
-                    Text("开始共享以生成配对二维码")
+                    Text("开始共享以生成连接信息")
                 }
                 .listRowBackground(Color.clear)
             }
         }
-        .animation(.smooth, value: appState.pairingQRCode != nil)
-        .animation(.smooth, value: appState.isRefreshing)
+        .animation(.smooth, value: appState.serverInfo != nil)
     }
 
     /// 复制 QR 配对载荷到剪贴板
@@ -281,16 +256,7 @@ struct ContentView: View {
 
     private var auditSection: some View {
         Section("审计日志") {
-            Button(role: .destructive) {
-                HapticFeedback.notification(.warning)
-                Task { await appState.revokeAllPairings() }
-            } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: "xmark.shield.fill")
-                    Text("撤销所有配对")
-                }
-            }
-            .liquidGlassButtonStyle(.standard)
+            // 公开访问模式 - 无需撤销配对
 
             if auditEvents.isEmpty {
                 ContentUnavailableView {
@@ -373,10 +339,20 @@ struct ContentView: View {
         }
     }
 
-    private func qrPayloadString(for qr: PairingQRCode) -> String {
-        let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .iso8601
-        return (try? String(data: encoder.encode(qr), encoding: .utf8)) ?? ""
+    private func serverInfoPayloadString(for info: ServerInfo) -> String {
+        // 生成兼容 CLI 的 JSON 格式
+        let payload: [String: Any] = [
+            "version": "1",
+            "host": info.host,
+            "port": info.port,
+            "code": "",  // 公开访问模式，无需配对码
+            "certificateFingerprint": info.fingerprint
+        ]
+        guard let data = try? JSONSerialization.data(withJSONObject: payload),
+              let jsonString = String(data: data, encoding: .utf8) else {
+            return ""
+        }
+        return jsonString
     }
 }
 
