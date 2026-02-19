@@ -308,4 +308,58 @@ final class AppState {
         // This is Apple's privacy design - apps can't know if health data access was denied.
         healthAuthorizationStatus = await healthService.hasRequestedAuthorization(for: syncConfiguration.enabledTypes)
     }
+    
+    // MARK: - Health Insights
+    
+    /// 获取指定健康数据类型的洞察信息
+    /// - Parameters:
+    ///   - type: 健康数据类型
+    ///   - startDate: 开始日期
+    ///   - endDate: 结束日期
+    /// - Returns: 健康洞察对象，如果无数据则返回 nil
+    func fetchInsight(for type: HealthDataType, from startDate: Date, to endDate: Date) async -> HealthInsight? {
+        let response = await healthService.fetchSamples(types: [type], startDate: startDate, endDate: endDate, limit: 10000, offset: 0)
+        
+        guard response.status == .ok, !response.samples.isEmpty else {
+            return nil
+        }
+        
+        let values = response.samples.map { $0.value }
+        
+        // 安全计算平均值，避免除零错误
+        guard !values.isEmpty else {
+            return nil
+        }
+        
+        let average = values.reduce(0, +) / Double(values.count)
+        let total = values.reduce(0, +)
+        let min = values.min() ?? 0
+        let max = values.max() ?? 0
+        
+        let category: HealthInsight.Category
+        switch type {
+        case .steps, .distanceWalkingRunning, .distanceCycling, .activeEnergyBurned, .basalEnergyBurned, .exerciseTime, .standHours, .flightsClimbed, .workouts:
+            category = .activity
+        case .heartRate, .restingHeartRate, .walkingHeartRateAverage, .heartRateVariability, .bloodPressureSystolic, .bloodPressureDiastolic, .bloodOxygen, .respiratoryRate, .bodyTemperature, .vo2Max:
+            category = .heart
+        case .sleepAnalysis, .sleepInBed, .sleepAsleep, .sleepAwake, .sleepREM, .sleepCore, .sleepDeep:
+            category = .sleep
+        default:
+            category = .body
+        }
+        
+        let dataPoints = response.samples.map { sample in
+            HealthInsight.DataPoint(date: sample.startDate, value: sample.value)
+        }
+        
+        return HealthInsight(
+            type: type.rawValue,
+            category: category,
+            averageValue: average,
+            totalValue: total,
+            minValue: min,
+            maxValue: max,
+            dataPoints: dataPoints
+        )
+    }
 }

@@ -285,56 +285,15 @@ struct HealthInsightsView: View {
         // 获取健康数据洞察
         var loadedInsights: [HealthInsight] = []
         
-        let healthService = HealthKitService()
         let types = appState.syncConfiguration.enabledTypes
         
         for type in types {
-            if let insight = await fetchInsight(for: type, from: startDate, to: endDate, healthService: healthService) {
+            if let insight = await appState.fetchInsight(for: type, from: startDate, to: endDate) {
                 loadedInsights.append(insight)
             }
         }
         
         insights = loadedInsights
-    }
-    
-    private func fetchInsight(for type: HealthDataType, from startDate: Date, to endDate: Date, healthService: HealthKitService) async -> HealthInsight? {
-        let response = await healthService.fetchSamples(types: [type], startDate: startDate, endDate: endDate, limit: 10000, offset: 0)
-        
-        guard response.status == .ok, !response.samples.isEmpty else {
-            return nil
-        }
-        
-        let values = response.samples.map { $0.value }
-        let average = values.reduce(0, +) / Double(values.count)
-        let total = values.reduce(0, +)
-        let min = values.min() ?? 0
-        let max = values.max() ?? 0
-        
-        let category: HealthInsight.Category
-        switch type {
-        case .steps, .distanceWalkingRunning, .distanceCycling, .activeEnergyBurned, .basalEnergyBurned, .exerciseTime, .standHours, .flightsClimbed, .workouts:
-            category = .activity
-        case .heartRate, .restingHeartRate, .walkingHeartRateAverage, .heartRateVariability, .bloodPressureSystolic, .bloodPressureDiastolic, .bloodOxygen, .respiratoryRate, .bodyTemperature, .vo2Max:
-            category = .heart
-        case .sleepAnalysis, .sleepInBed, .sleepAsleep, .sleepAwake, .sleepREM, .sleepCore, .sleepDeep:
-            category = .sleep
-        default:
-            category = .body
-        }
-        
-        let dataPoints = response.samples.map { sample in
-            HealthInsight.DataPoint(date: sample.startDate, value: sample.value)
-        }
-        
-        return HealthInsight(
-            type: type.rawValue,
-            category: category,
-            averageValue: average,
-            totalValue: total,
-            minValue: min,
-            maxValue: max,
-            dataPoints: dataPoints
-        )
     }
     
     private func generateRecommendations() -> [String] {

@@ -9,6 +9,24 @@ struct HealthSampleMapper {
         let sourceName = sample.sourceRevision.source.name
         if let quantitySample = sample as? HKQuantitySample {
             let unit = unitForQuantityType(requestedType)
+            
+            // 检查单位兼容性，避免 "Attempt to convert incompatible units" 崩溃
+            guard quantitySample.quantity.is(compatibleWith: unit) else {
+                // 尝试使用样本的默认单位
+                let compatibleUnit = compatibleUnitForQuantity(quantitySample.quantity, requestedType: requestedType)
+                let value = quantitySample.quantity.doubleValue(for: compatibleUnit)
+                return HealthSampleDTO(
+                    id: quantitySample.uuid,
+                    type: requestedType.rawValue,
+                    value: value,
+                    unit: compatibleUnit.unitString,
+                    startDate: quantitySample.startDate,
+                    endDate: quantitySample.endDate,
+                    sourceName: sourceName,
+                    metadata: nil
+                )
+            }
+            
             let value = quantitySample.quantity.doubleValue(for: unit)
             return HealthSampleDTO(
                 id: quantitySample.uuid,
@@ -154,6 +172,50 @@ struct HealthSampleMapper {
         } else {
             return workout.totalEnergyBurned?.doubleValue(for: .kilocalorie())
         }
+    }
+    
+    /// 根据实际样本的数量类型返回兼容的单位
+    /// 当请求的单位与样本单位不兼容时使用此方法
+    static func compatibleUnitForQuantity(_ quantity: HKQuantity, requestedType: HealthDataType) -> HKUnit {
+        // 时间类型 - 检查是否是时间单位
+        if quantity.is(compatibleWith: .second()) {
+            return .second()
+        }
+        // 计数类型
+        if quantity.is(compatibleWith: .count()) {
+            return .count()
+        }
+        // 距离类型
+        if quantity.is(compatibleWith: .meter()) {
+            return .meter()
+        }
+        // 能量类型
+        if quantity.is(compatibleWith: .kilocalorie()) {
+            return .kilocalorie()
+        }
+        // 百分比类型
+        if quantity.is(compatibleWith: .percent()) {
+            return .percent()
+        }
+        // 质量类型
+        if quantity.is(compatibleWith: .gramUnit(with: .kilo)) {
+            return .gramUnit(with: .kilo)
+        }
+        // 温度类型
+        if quantity.is(compatibleWith: .degreeCelsius()) {
+            return .degreeCelsius()
+        }
+        // 压力类型
+        if quantity.is(compatibleWith: .millimeterOfMercury()) {
+            return .millimeterOfMercury()
+        }
+        // 心率类型 (count/minute)
+        if quantity.is(compatibleWith: .count().unitDivided(by: .minute())) {
+            return .count().unitDivided(by: .minute())
+        }
+        
+        // 默认返回请求类型的单位
+        return unitForQuantityType(requestedType)
     }
 }
 
